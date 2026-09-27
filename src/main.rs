@@ -1050,8 +1050,6 @@ async fn run_app(
             terminal.draw(|f| {
                 let chunks = ui::layout::get_layout(f.area());
 
-                ui::layout::render_header(f, chunks[0], &app);
-
                 // While the palette overlay is open, the main area keeps
                 // showing the view it opened over.
                 let view_mode = if app.mode == AppMode::Palette {
@@ -1061,7 +1059,7 @@ async fn run_app(
                 };
                 match view_mode {
                     AppMode::Detail => {
-                        ui::detail::render_detail(f, chunks[1], &mut app);
+                        ui::detail::render_detail(f, chunks[0], &mut app);
                         app.table_area = None;
                     }
                     // The search views cover the torrent table, so clicks must
@@ -1070,11 +1068,11 @@ async fn run_app(
                     // for the refine loop; before any search exists the
                     // torrent table shows through instead.
                     AppMode::SearchResults => {
-                        ui::search::render_search_view(f, chunks[1], &mut app);
+                        ui::search::render_search_view(f, chunks[0], &mut app);
                         app.table_area = None;
                     }
                     AppMode::Search if app.search.searched_once || app.search.in_flight => {
-                        ui::search::render_search_view(f, chunks[1], &mut app);
+                        ui::search::render_search_view(f, chunks[0], &mut app);
                         app.table_area = None;
                     }
                     _ => {
@@ -1082,7 +1080,7 @@ async fn run_app(
                         // under the table; the click map covers only the
                         // table itself.
                         let (table_area, pending_area) = ui::layout::split_pending(
-                            chunks[1],
+                            chunks[0],
                             ui::table::pending_strip_height(&app),
                         );
                         app.table_area = Some(table_area);
@@ -1100,15 +1098,15 @@ async fn run_app(
 
                 match app.mode {
                     AppMode::Input => {
-                        ui::input::render_input(f, chunks[2], &input_widget);
+                        ui::input::render_input(f, chunks[1], &input_widget);
                     }
                     AppMode::Filter => {
-                        ui::layout::render_filter_bar(f, chunks[2], &app.filter_text);
+                        ui::layout::render_filter_bar(f, chunks[1], &app.filter_text);
                     }
                     AppMode::ThrottleInput => {
                         ui::layout::render_throttle_bar(
                             f,
-                            chunks[2],
+                            chunks[1],
                             app.throttle_step,
                             &app.throttle_input_buf,
                         );
@@ -1118,10 +1116,10 @@ async fn run_app(
                     // build failure) mean the search cannot proceed, and the
                     // status bar is the only widget that renders them.
                     AppMode::Search if app.error_message.is_none() => {
-                        ui::layout::render_search_bar(f, chunks[2], &app.search.input);
+                        ui::layout::render_search_bar(f, chunks[1], &app.search.input);
                     }
                     _ => {
-                        ui::layout::render_status_bar(f, chunks[2], &app);
+                        ui::layout::render_status_bar(f, chunks[1], &app);
                     }
                 }
 
