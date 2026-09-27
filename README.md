@@ -143,6 +143,7 @@ torrenttui --stop
 | `Esc` | Clear marks (or close current dialog) |
 | `?` | Toggle help |
 | `Ctrl+D` | Detach: keep downloading in the background and close the TUI |
+| `T` | Choose a colour theme |
 | `q` | Quit |
 | `Ctrl+C` | Quit (double press to force) |
 
@@ -344,7 +345,11 @@ The `[privacy]` keys are all off by default and opt-in. See [Privacy](#privacy) 
 
 TorrentTUI ships with a colour-theme picker. Press `T` — or run **Choose a colour theme** from the command palette (`:` / `Ctrl+P`) — to open the selector: the highlight previews each theme live, `Enter` applies it, `Esc` cancels.
 
-The choice is written back to `[ui] theme`. `system` (the default) is TorrentTUI's original ANSI palette; every other theme sets explicit 24-bit colours, so it needs a truecolor terminal. Around three dozen presets are bundled — `tokyonight`, `gruvbox`, `catppuccin`, `nord`, `dracula`, `kanagawa`, `matrix` and more. An unknown `theme` value falls back to `system`.
+The choice is saved as `[ui] theme`, and only that line of `config.toml` changes — comments, key order and `~` paths are left as you wrote them. If the file has a syntax error, the theme applies for the session and nothing is written, so the file stays as it is for you to fix. An unknown `theme` value falls back to `system`.
+
+`system` (the default) is TorrentTUI's original ANSI palette, which follows your terminal's own colour scheme. The other themes are `catppuccin`, `dracula`, `everforest`, `github`, `gruvbox`, `kanagawa`, `monokai`, `nord`, `one-dark`, `rosepine`, `solarized` and `tokyonight`. They set explicit 24-bit colours, so they need a truecolor terminal, and they are dark schemes: they colour text but leave your terminal's background alone, so they are meant for a dark background.
+
+The preset list and the first colour mapping came from [OpenCode](https://github.com/anomalyco/opencode)'s MIT-licensed themes; each was then matched to its scheme's upstream palette.
 
 ### Watch folder
 

@@ -35,7 +35,6 @@ pub fn help_rows() -> Vec<(String, String)> {
         }
     };
     section(&mut rows, Section::Main, None);
-    section(&mut rows, Section::Theme, Some("-- Themes --"));
     section(&mut rows, Section::Search, Some("-- Search Results --"));
     section(&mut rows, Section::Detail, Some("-- Detail View --"));
     rows

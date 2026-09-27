@@ -1,9 +1,18 @@
 //! Built-in colour themes.
 //!
-//! A set of popular dark colour schemes, bundled as ready-to-use presets. Each
-//! entry carries a packed `0xRRGGBB` palette — background, text, the semantic
-//! states and a muted ink — which [`Palette::theme`] maps onto the semantic
-//! slots below.
+//! A dozen well-known dark colour schemes, bundled as ready-to-use presets.
+//! Each entry carries a packed `0xRRGGBB` palette — background, text, the
+//! semantic states, a muted ink and the scheme's own selection colour — which
+//! [`Palette::theme`] maps onto the semantic slots below.
+//!
+//! The set and the first colour mapping came from
+//! [OpenCode](https://github.com/anomalyco/opencode)'s MIT-licensed themes
+//! (`packages/ui/src/theme/themes/*.json`). Each preset was then re-mapped
+//! onto its scheme's upstream palette so a status keeps the meaning it has
+//! under `system`: cyan-ish chrome, a magenta-ish upload accent, blue-ish
+//! Downloading, green Seeding, yellow Paused, red errors. The tests below
+//! enforce that no two status colours blur together and that every preset
+//! stays readable on its own background.
 //!
 //! `system` reproduces TorrentTUI's original ANSI colours exactly, so it is the
 //! default and a first launch is unchanged.
@@ -36,8 +45,12 @@ pub struct Theme {
     pub text_dim: Color,
     /// Labels, borders, placeholders — the quietest ink.
     pub muted: Color,
-    /// Background of a marked row (the one place the UI paints a background).
+    /// Background of a marked row.
     pub bg_element: Color,
+    /// Background of the highlighted (cursor) row in every table and list.
+    /// Its own slot rather than `muted`: `muted` is an ink tuned to be quiet
+    /// on the background, and as a background it left row text unreadable.
+    pub selection_bg: Color,
     /// Progress-column ramp: `<25`, `25-50`, `50-75`, `75-100`, `100`.
     pub progress: [Color; 5],
 }
@@ -58,6 +71,7 @@ impl Theme {
             text_dim: Color::Gray,
             muted: Color::DarkGray,
             bg_element: Color::Indexed(236),
+            selection_bg: Color::DarkGray,
             progress: [
                 Color::Red,
                 Color::Rgb(255, 165, 0),
@@ -114,20 +128,21 @@ const fn mix(a: u32, b: u32, t: u32) -> u32 {
 }
 
 /// A preset's palette, packed as
-/// `[background, text, primary, accent, success, warning, error, info, muted]`.
+/// `[background, text, primary, accent, success, warning, error, info, muted, selection]`.
 struct Palette {
     id: &'static str,
     name: &'static str,
-    hex: [u32; 9],
+    hex: [u32; 10],
 }
 
 impl Palette {
-    /// Derive the semantic slots. The two greys come straight from the palette
-    /// (text, muted); one blend darkens the marked-row background and another
-    /// builds the progress ramp, so every widget is covered without a
+    /// Derive the semantic slots. Most come straight from the palette; one
+    /// blend darkens the marked-row background, one builds `text_dim`, and
+    /// two build the progress ramp, so every widget is covered without a
     /// per-theme override table.
     const fn theme(&self) -> Theme {
-        let [neutral, ink, primary, accent, success, warning, error, info, comment] = self.hex;
+        let [neutral, ink, primary, accent, success, warning, error, info, comment, selection] =
+            self.hex;
         Theme {
             primary: rgb(primary),
             accent: rgb(accent),
@@ -139,6 +154,7 @@ impl Palette {
             text_dim: rgb(mix(ink, comment, 50)),
             muted: rgb(comment),
             bg_element: rgb(mix(neutral, ink, 6)),
+            selection_bg: rgb(selection),
             progress: [
                 rgb(error),
                 rgb(mix(error, warning, 50)),
@@ -154,41 +170,18 @@ impl Palette {
 /// them that way.
 #[rustfmt::skip]
 const PALETTES: &[Palette] = &[
-    Palette { id: "amoled", name: "AMOLED", hex: [0x000000, 0xffffff, 0xb388ff, 0xff4081, 0x00ff88, 0xffea00, 0xff1744, 0x18ffff, 0x555555] },
-    Palette { id: "aura", name: "Aura", hex: [0x15141b, 0xedecee, 0xa277ff, 0xff6767, 0x61ffca, 0xffca85, 0xff6767, 0x82e2ff, 0x6d6a7e] },
-    Palette { id: "ayu", name: "Ayu", hex: [0x0f1419, 0xd6dae0, 0x3fb7e3, 0xf2856f, 0x78d05c, 0xe4a75c, 0xf58572, 0x66c6f1, 0x5a6673] },
-    Palette { id: "carbonfox", name: "Carbonfox", hex: [0x393939, 0xf2f4f8, 0x33b1ff, 0xff8389, 0x42be65, 0xf1c21b, 0xff8389, 0x78a9ff, 0x6f6f6f] },
-    Palette { id: "catppuccin", name: "Catppuccin", hex: [0x1e1e2e, 0xcdd6f4, 0xb4befe, 0xf38ba8, 0xa6d189, 0xf4b8e4, 0xf38ba8, 0x89dceb, 0x6c7086] },
-    Palette { id: "catppuccin-frappe", name: "Catppuccin Frappe", hex: [0x303446, 0xc6d0f5, 0x8da4e2, 0xf4b8e4, 0xa6d189, 0xe5c890, 0xe78284, 0x81c8be, 0x949cb8] },
-    Palette { id: "catppuccin-macchiato", name: "Catppuccin Macchiato", hex: [0x24273a, 0xcad3f5, 0x8aadf4, 0xf5bde6, 0xa6da95, 0xeed49f, 0xed8796, 0x8bd5ca, 0x939ab7] },
-    Palette { id: "cobalt2", name: "Cobalt2", hex: [0x193549, 0xffffff, 0x0088ff, 0x2affdf, 0x9eff80, 0xffc600, 0xff0088, 0xff9d00, 0x0088ff] },
-    Palette { id: "cursor", name: "Cursor", hex: [0x181818, 0xe4e4e4, 0x88c0d0, 0x88c0d0, 0x3fa266, 0xf1b467, 0xe34671, 0x81a1c1, 0xe4e4e4] },
-    Palette { id: "dracula", name: "Dracula", hex: [0x1d1e28, 0xf8f8f2, 0xbd93f9, 0xff79c6, 0x50fa7b, 0xffb86c, 0xff5555, 0x8be9fd, 0x6272a4] },
-    Palette { id: "everforest", name: "Everforest", hex: [0x2d353b, 0xd3c6aa, 0xa7c080, 0xd699b6, 0xa7c080, 0xe69875, 0xe67e80, 0x83c092, 0x7a8478] },
-    Palette { id: "flexoki", name: "Flexoki", hex: [0x100f0f, 0xcecdc3, 0xda702c, 0x8b7ec8, 0x879a39, 0xda702c, 0xd14d41, 0x3aa99f, 0x6f6e69] },
-    Palette { id: "github", name: "GitHub", hex: [0x0d1117, 0xc9d1d9, 0x58a6ff, 0x39c5cf, 0x3fb950, 0xe3b341, 0xf85149, 0xd29922, 0x8b949e] },
-    Palette { id: "gruvbox", name: "Gruvbox", hex: [0x282828, 0xebdbb2, 0x83a598, 0xfb4934, 0xb8bb26, 0xfabd2f, 0xfb4934, 0xd3869b, 0x928374] },
-    Palette { id: "kanagawa", name: "Kanagawa", hex: [0x1f1f28, 0xdcd7ba, 0x7e9cd8, 0xd27e99, 0x98bb6c, 0xd7a657, 0xe82424, 0x76946a, 0x727169] },
-    Palette { id: "lucent-orng", name: "Lucent Orng", hex: [0x2a1a15, 0xeeeeee, 0xec5b2b, 0xfff7f1, 0x6ba1e6, 0xec5b2b, 0xe06c75, 0x56b6c2, 0x808080] },
-    Palette { id: "material", name: "Material", hex: [0x263238, 0xeeffff, 0x82aaff, 0x89ddff, 0xc3e88d, 0xffcb6b, 0xf07178, 0xffcb6b, 0x546e7a] },
-    Palette { id: "matrix", name: "Matrix", hex: [0x0a0e0a, 0x62ff94, 0x2eff6a, 0xc770ff, 0x62ff94, 0xe6ff57, 0xff4b4b, 0x30b3ff, 0x8ca391] },
-    Palette { id: "mercury", name: "Mercury", hex: [0x171721, 0xdddde5, 0x8da4f5, 0x8da4f5, 0x77c599, 0xfc9b6f, 0xfc92b4, 0x77becf, 0x9d9da8] },
-    Palette { id: "monokai", name: "Monokai", hex: [0x272822, 0xf8f8f2, 0xae81ff, 0xf92672, 0xa6e22e, 0xfd971f, 0xf92672, 0x66d9ef, 0x75715e] },
-    Palette { id: "nightowl", name: "Night Owl", hex: [0x011627, 0xd6deeb, 0x82aaff, 0xf78c6c, 0xc5e478, 0xecc48d, 0xef5350, 0x82aaff, 0x637777] },
-    Palette { id: "nord", name: "Nord", hex: [0x2e3440, 0xe5e9f0, 0x88c0d0, 0xd57780, 0xa3be8c, 0xd08770, 0xbf616a, 0x81a1c1, 0x616e88] },
-    Palette { id: "one-dark", name: "One Dark", hex: [0x282c34, 0xabb2bf, 0x61afef, 0x56b6c2, 0x98c379, 0xe5c07b, 0xe06c75, 0xd19a66, 0x5c6370] },
-    Palette { id: "onedarkpro", name: "One Dark Pro", hex: [0x1e222a, 0xabb2bf, 0x61afef, 0xe06c75, 0x98c379, 0xe5c07b, 0xe06c75, 0x56b6c2, 0x5c6370] },
-    Palette { id: "orng", name: "Orng", hex: [0x0a0a0a, 0xeeeeee, 0xec5b2b, 0xfff7f1, 0x6ba1e6, 0xec5b2b, 0xe06c75, 0x56b6c2, 0x808080] },
-    Palette { id: "osaka-jade", name: "Osaka Jade", hex: [0x111c18, 0xc1c497, 0x2dd5b7, 0x549e6a, 0x549e6a, 0xe5c736, 0xff5345, 0x2dd5b7, 0x53685b] },
-    Palette { id: "palenight", name: "Palenight", hex: [0x292d3e, 0xa6accd, 0x82aaff, 0x89ddff, 0xc3e88d, 0xffcb6b, 0xf07178, 0xf78c6c, 0x676e95] },
-    Palette { id: "rosepine", name: "Rose Pine", hex: [0x191724, 0xe0def4, 0x9ccfd8, 0xebbcba, 0x31748f, 0xf6c177, 0xeb6f92, 0x9ccfd8, 0x6e6a86] },
-    Palette { id: "shadesofpurple", name: "Shades of Purple", hex: [0x1a102b, 0xf5f0ff, 0xc792ff, 0xff7ac6, 0x7be0b0, 0xffd580, 0xff7ac6, 0x7dd4ff, 0xb362ff] },
-    Palette { id: "solarized", name: "Solarized", hex: [0x002b36, 0x93a1a1, 0x6c71c4, 0xd33682, 0x859900, 0xb58900, 0xdc322f, 0x2aa198, 0x586e75] },
-    Palette { id: "synthwave84", name: "Synthwave '84", hex: [0x262335, 0xffffff, 0x36f9f6, 0xb084eb, 0x72f1b8, 0xfede5d, 0xfe4450, 0xff8b39, 0x848bbd] },
-    Palette { id: "tokyonight", name: "Tokyonight", hex: [0x1a1b26, 0xc0caf5, 0x7aa2f7, 0xff9e64, 0x9ece6a, 0xe0af68, 0xf7768e, 0x7dcfff, 0x565f89] },
-    Palette { id: "vercel", name: "Vercel", hex: [0x000000, 0xededed, 0x0070f3, 0x8e4ec6, 0x46a758, 0xffb224, 0xe5484d, 0x52a8ff, 0x878787] },
-    Palette { id: "vesper", name: "Vesper", hex: [0x101010, 0xffffff, 0xffc799, 0xff8080, 0x99ffe4, 0xffc799, 0xff8080, 0xffc799, 0x8b8b8b] },
-    Palette { id: "zenburn", name: "Zenburn", hex: [0x3f3f3f, 0xdcdccc, 0x8cd0d3, 0x93e0e3, 0x7f9f7f, 0xf0dfaf, 0xcc9393, 0xdfaf8f, 0x7f9f7f] },
+    Palette { id: "catppuccin", name: "Catppuccin Mocha", hex: [0x1e1e2e, 0xcdd6f4, 0x89dceb, 0xcba6f7, 0xa6e3a1, 0xf9e2af, 0xf38ba8, 0x89b4fa, 0x7f849c, 0x45475a] },
+    Palette { id: "dracula", name: "Dracula", hex: [0x282a36, 0xf8f8f2, 0x8be9fd, 0xff79c6, 0x50fa7b, 0xf1fa8c, 0xff5555, 0xbd93f9, 0x6272a4, 0x44475a] },
+    Palette { id: "everforest", name: "Everforest", hex: [0x2d353b, 0xd3c6aa, 0x83c092, 0xd699b6, 0xa7c080, 0xdbbc7f, 0xe67e80, 0x7fbbb3, 0x859289, 0x475258] },
+    Palette { id: "github", name: "GitHub Dark", hex: [0x0d1117, 0xc9d1d9, 0x39c5cf, 0xbc8cff, 0x3fb950, 0xd29922, 0xf85149, 0x58a6ff, 0x8b949e, 0x264f78] },
+    Palette { id: "gruvbox", name: "Gruvbox Dark", hex: [0x282828, 0xebdbb2, 0x8ec07c, 0xd3869b, 0xb8bb26, 0xfabd2f, 0xfb4934, 0x83a598, 0x928374, 0x504945] },
+    Palette { id: "kanagawa", name: "Kanagawa", hex: [0x1f1f28, 0xdcd7ba, 0x7fb4ca, 0xd27e99, 0x98bb6c, 0xe6c384, 0xff5d62, 0x7e9cd8, 0x727169, 0x2d4f67] },
+    Palette { id: "monokai", name: "Monokai", hex: [0x272822, 0xf8f8f2, 0x66d9ef, 0xae81ff, 0xa6e22e, 0xe6db74, 0xf92672, 0x66d9ef, 0x75715e, 0x49483e] },
+    Palette { id: "nord", name: "Nord", hex: [0x2e3440, 0xe5e9f0, 0x88c0d0, 0xb48ead, 0xa3be8c, 0xebcb8b, 0xbf616a, 0x81a1c1, 0x7b88a1, 0x434c5e] },
+    Palette { id: "one-dark", name: "One Dark", hex: [0x282c34, 0xabb2bf, 0x56b6c2, 0xc678dd, 0x98c379, 0xe5c07b, 0xe06c75, 0x61afef, 0x7f848e, 0x3e4451] },
+    Palette { id: "rosepine", name: "Rose Pine", hex: [0x191724, 0xe0def4, 0xebbcba, 0xc4a7e7, 0x31748f, 0xf6c177, 0xeb6f92, 0x9ccfd8, 0x6e6a86, 0x403d52] },
+    Palette { id: "solarized", name: "Solarized Dark", hex: [0x002b36, 0x93a1a1, 0x2aa198, 0xd33682, 0x859900, 0xb58900, 0xdc322f, 0x268bd2, 0x657b83, 0x073642] },
+    Palette { id: "tokyonight", name: "Tokyo Night", hex: [0x1a1b26, 0xc0caf5, 0x7dcfff, 0xbb9af7, 0x9ece6a, 0xe0af68, 0xf7768e, 0x7aa2f7, 0x737aa2, 0x283457] },
 ];
 
 /// One selectable theme: a stable `id` (written to `config.toml`), a display
@@ -227,6 +220,61 @@ pub fn by_name(name: &str) -> &'static ThemeEntry {
 mod tests {
     use super::*;
 
+    /// Linear-light sRGB channels of a preset colour.
+    fn linear(c: Color) -> [f64; 3] {
+        let Color::Rgb(r, g, b) = c else {
+            panic!("presets are 24-bit, got {c:?}");
+        };
+        [r, g, b].map(|v| {
+            let v = f64::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        })
+    }
+
+    /// WCAG relative luminance.
+    fn luminance(c: Color) -> f64 {
+        let [r, g, b] = linear(c);
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// WCAG contrast ratio, 1.0 (identical) to 21.0 (black on white).
+    fn contrast(a: Color, b: Color) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    /// CIE76 colour difference in L*a*b* (D65). Around 2 is just noticeable;
+    /// below ~20 two status colours read as the same hue at a glance.
+    fn delta_e(a: Color, b: Color) -> f64 {
+        fn lab(c: Color) -> [f64; 3] {
+            let [r, g, b] = linear(c);
+            let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+            let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+            let f = |t: f64| {
+                if t > 0.008856 {
+                    t.cbrt()
+                } else {
+                    7.787 * t + 16.0 / 116.0
+                }
+            };
+            let (fx, fy, fz) = (f(x), f(y), f(z));
+            [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
+        }
+        let (a, b) = (lab(a), lab(b));
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    /// Every preset with its own background, which the theme itself does not
+    /// carry (the UI never paints it).
+    fn presets() -> impl Iterator<Item = (&'static str, Color, Theme)> {
+        PALETTES.iter().map(|p| (p.id, rgb(p.hex[0]), p.theme()))
+    }
+
     #[test]
     fn theme_ids_are_unique_and_non_empty() {
         for (i, a) in THEMES.iter().enumerate() {
@@ -243,7 +291,7 @@ mod tests {
     #[test]
     fn the_registry_has_system_first_then_the_built_in_palettes() {
         assert_eq!(THEMES[0].id, "system");
-        assert!(THEMES.len() > 1, "the built-in palettes must be present");
+        assert_eq!(THEMES.len(), PALETTES.len() + 1);
         assert!(THEMES.iter().any(|e| e.id == "gruvbox"));
     }
 
@@ -273,5 +321,88 @@ mod tests {
         assert_eq!(t.progress_color(75.0), Color::LightGreen);
         assert_eq!(t.progress_color(99.9), Color::LightGreen);
         assert_eq!(t.progress_color(100.0), Color::Green);
+    }
+
+    #[test]
+    fn system_highlights_rows_the_way_the_app_always_did() {
+        // Before theming every table highlighted its cursor row with a
+        // DarkGray background; `system` must keep that exact look.
+        assert_eq!(Theme::system().selection_bg, Color::DarkGray);
+    }
+
+    #[test]
+    fn every_preset_keeps_its_status_colours_apart() {
+        // Downloading, Seeding, Paused, Error and Fetching metadata (plus the
+        // upload speed) are told apart by these five slots. Two that match —
+        // or merely look alike — turn a status into a lookalike of another:
+        // an upload speed in the error red reads as a failure.
+        for (id, _, t) in presets() {
+            let slots = [
+                ("accent", t.accent),
+                ("success", t.success),
+                ("warning", t.warning),
+                ("error", t.error),
+                ("info", t.info),
+            ];
+            for (i, (a, ca)) in slots.iter().enumerate() {
+                for (b, cb) in &slots[i + 1..] {
+                    let d = delta_e(*ca, *cb);
+                    assert!(d >= 20.0, "{id}: {a} and {b} look alike (ΔE {d:.1})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_preset_is_readable_on_its_own_background() {
+        for (id, bg, t) in presets() {
+            let text = contrast(t.text, bg);
+            assert!(text >= 4.5, "{id}: text on background is {text:.2}:1");
+            // 3:1 is the WCAG floor for UI components and bold text, which is
+            // what status words, speeds and borders are.
+            for (name, c) in [
+                ("primary", t.primary),
+                ("accent", t.accent),
+                ("success", t.success),
+                ("warning", t.warning),
+                ("error", t.error),
+                ("info", t.info),
+                ("muted", t.muted),
+            ] {
+                let r = contrast(c, bg);
+                assert!(r >= 3.0, "{id}: {name} on background is {r:.2}:1");
+            }
+        }
+    }
+
+    #[test]
+    fn the_selection_bar_is_readable_in_every_preset() {
+        for (id, bg, t) in presets() {
+            // Row text sits on the bar at full size.
+            let text = contrast(t.text, t.selection_bg);
+            assert!(
+                text >= 4.5,
+                "{id}: text on the selection bar is {text:.2}:1"
+            );
+            // Coloured cells (status, speeds) keep their hue on the bar and
+            // must not vanish into it.
+            for (name, c) in [
+                ("accent", t.accent),
+                ("success", t.success),
+                ("warning", t.warning),
+                ("error", t.error),
+                ("info", t.info),
+            ] {
+                let r = contrast(c, t.selection_bg);
+                assert!(r >= 2.0, "{id}: {name} on the selection bar is {r:.2}:1");
+            }
+            // The bar itself must stand out from the rows around it. It also
+            // carries a `▶` marker and bold text, so colour is not the only cue.
+            let bar = contrast(t.selection_bg, bg);
+            assert!(
+                bar >= 1.1,
+                "{id}: selection bar is {bar:.2}:1 against the background"
+            );
+        }
     }
 }

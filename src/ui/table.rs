@@ -216,7 +216,7 @@ pub fn render_table(f: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
         )
         .row_highlight_style(
             Style::default()
-                .bg(theme.muted)
+                .bg(theme.selection_bg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("\u{25b6} ");

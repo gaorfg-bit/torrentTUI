@@ -346,7 +346,7 @@ fn render_files_tab(f: &mut Frame, area: Rect, app: &mut App) {
 
         let highlight_style = if is_highlighted {
             Style::default()
-                .bg(theme.muted)
+                .bg(theme.selection_bg)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -524,7 +524,7 @@ fn render_peers_tab(f: &mut Frame, area: Rect, app: &mut App) {
         let prefix = if is_selected { "> " } else { "  " };
         let style = if is_selected {
             Style::default()
-                .bg(theme.muted)
+                .bg(theme.selection_bg)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()

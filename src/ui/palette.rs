@@ -71,7 +71,7 @@ pub fn render_palette(f: &mut Frame, area: Rect, app: &mut App) {
     let table = Table::new(rows, [Constraint::Min(24), Constraint::Length(18)])
         .row_highlight_style(
             Style::default()
-                .bg(theme.muted)
+                .bg(theme.selection_bg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("\u{25b6} ");

@@ -73,10 +73,6 @@ pub enum Section {
     Main,
     Search,
     Detail,
-    /// Theme selection. Rendered only in the help overlay's "Themes" block —
-    /// deliberately not in the README key tables, which the drift test
-    /// regenerates from `Main`/`Search`/`Detail` alone.
-    Theme,
 }
 
 pub struct ActionInfo {
@@ -388,14 +384,14 @@ pub const ACTIONS: &[ActionInfo] = &[
         // nothing to do — the kind of surprise the explicitness rule forbids.
         available: has_torrents,
     },
-    // ---- Themes ----
     ActionInfo {
-        // Global, so the palette offers it from every non-input view (Normal,
-        // Detail, Search results). The keybinding lives in Normal mode, beside
-        // the other view-level actions.
+        // Global: the palette offers it from every non-input view, and `T` is
+        // bound in each of them (Normal, Detail, Search results). The selector
+        // returns to the view it opened over, so unlike Help/Quit it leaves
+        // Detail's SetDetailTorrent materialization intact.
         id: Some(ActionId::SelectTheme),
         scope: Scope::Global,
-        section: Section::Theme,
+        section: Section::Main,
         keys: "`T`",
         description: "Choose a colour theme",
         short: Some("Choose a colour theme"),

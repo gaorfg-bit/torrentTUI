@@ -866,7 +866,7 @@ fn open_log_file_at(path: &Path) -> io::Result<std::fs::File> {
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     cli: Cli,
-    mut config: config::Config,
+    config: config::Config,
     health: Arc<HealthCapture>,
     config_warning: Option<String>,
     takeover_of: Option<instance::DaemonRecord>,
@@ -1270,11 +1270,13 @@ async fn run_app(
                             AppMode::Palette => handle_palette_mode(&mut app, key, &mut input_widget, &cmd_tx, &search_tx, &mut search_client).await,
                             AppMode::ThemeSelect => {
                                 if let Some(id) = handle_theme_select_mode(&mut app, key) {
-                                    config.ui.theme = id.to_string();
-                                    if let Err(e) = config.save() {
-                                        app.set_error(format!("Couldn't save theme: {e}"));
-                                    } else {
-                                        app.set_info(format!("Theme: {}", theme::by_name(id).name));
+                                    let name = theme::by_name(id).name;
+                                    // Only `[ui] theme` is written; see `save_theme`.
+                                    match config::Config::save_theme(id) {
+                                        Ok(()) => app.set_info(format!("Theme: {name}")),
+                                        Err(e) => app.set_error(format!(
+                                            "Theme {name} is on for this session but not saved: {e:#}"
+                                        )),
                                     }
                                 }
                             }
@@ -1767,6 +1769,7 @@ async fn handle_search_results_mode(
         KeyCode::Char(':') => {
             app.open_palette();
         }
+        KeyCode::Char('T') => app.open_theme_select(),
         KeyCode::Char('j') | KeyCode::Down => app.search_next(),
         KeyCode::Char('k') | KeyCode::Up => app.search_previous(),
         KeyCode::Tab => app.cycle_result_sort(),
@@ -1848,6 +1851,7 @@ async fn handle_detail_mode(
         KeyCode::Char(':') => {
             app.open_palette();
         }
+        KeyCode::Char('T') => app.open_theme_select(),
         KeyCode::Tab => cycle_detail_tab(app),
         KeyCode::Char('j') | KeyCode::Down => match app.detail_tab {
             DetailTab::Files => {
@@ -2766,6 +2770,87 @@ mod tests {
         .await;
         assert_eq!(app.mode, AppMode::Palette);
         assert_eq!(app.palette.return_mode, AppMode::SearchResults);
+    }
+
+    #[tokio::test]
+    async fn capital_t_opens_the_theme_selector_from_every_view_the_palette_offers_it_in() {
+        // The palette lists "Choose a colour theme" with its `T` key in all
+        // three views, so the key has to work in all three — and Esc must land
+        // back in the same view without touching the engine (leaving Detail
+        // would have to release its SetDetailTorrent materialization).
+        let (tx, mut rx) = mpsc::channel::<EngineCommand>(8);
+        let (search_tx, _search_rx) = search_channel();
+        let mut client = None;
+        let mut iw = InputWidget::new();
+
+        let mut app = App::new();
+        handle_normal_mode(&mut app, &mut iw, key(KeyCode::Char('T')), &tx).await;
+        assert_eq!(app.mode, AppMode::ThemeSelect);
+        assert_eq!(handle_theme_select_mode(&mut app, key(KeyCode::Esc)), None);
+        assert_eq!(app.mode, AppMode::Normal);
+
+        let mut app = App::new();
+        app.mode = AppMode::Detail;
+        handle_detail_mode(&mut app, key(KeyCode::Char('T')), &tx).await;
+        assert_eq!(app.mode, AppMode::ThemeSelect);
+        assert_eq!(handle_theme_select_mode(&mut app, key(KeyCode::Esc)), None);
+        assert_eq!(app.mode, AppMode::Detail);
+
+        let mut app = App::new();
+        app.mode = AppMode::SearchResults;
+        handle_search_results_mode(
+            &mut app,
+            key(KeyCode::Char('T')),
+            &tx,
+            &search_tx,
+            &mut client,
+        )
+        .await;
+        assert_eq!(app.mode, AppMode::ThemeSelect);
+        assert_eq!(handle_theme_select_mode(&mut app, key(KeyCode::Esc)), None);
+        assert_eq!(app.mode, AppMode::SearchResults);
+
+        assert!(rx.try_recv().is_err(), "no engine command for a theme");
+    }
+
+    #[tokio::test]
+    async fn the_palette_theme_action_returns_to_the_view_under_the_palette() {
+        // Detail → palette → "Choose a colour theme" → Enter: the selector
+        // must come back to Detail, not to the palette it was launched from.
+        let (tx, _rx) = mpsc::channel::<EngineCommand>(8);
+        let (search_tx, _search_rx) = search_channel();
+        let mut client = None;
+        let mut iw = InputWidget::new();
+        let mut app = App::new();
+        app.handle_state_push(vec![torrent(0, types::TorrentStatus::Downloading)]);
+        app.mode = AppMode::Detail;
+        assert!(app.open_palette());
+        for c in "colour theme".chars() {
+            handle_palette_mode(
+                &mut app,
+                key(KeyCode::Char(c)),
+                &mut iw,
+                &tx,
+                &search_tx,
+                &mut client,
+            )
+            .await;
+        }
+        handle_palette_mode(
+            &mut app,
+            key(KeyCode::Enter),
+            &mut iw,
+            &tx,
+            &search_tx,
+            &mut client,
+        )
+        .await;
+        assert_eq!(app.mode, AppMode::ThemeSelect);
+        handle_theme_select_mode(&mut app, key(KeyCode::Down));
+        let picked = handle_theme_select_mode(&mut app, key(KeyCode::Enter));
+        assert_eq!(picked, Some(app.theme_name));
+        assert_ne!(app.theme_name, "system");
+        assert_eq!(app.mode, AppMode::Detail);
     }
 
     #[tokio::test]

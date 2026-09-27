@@ -128,7 +128,7 @@ pub fn render_search_view(f: &mut Frame, area: Rect, app: &mut App) {
     .block(block)
     .row_highlight_style(
         Style::default()
-            .bg(theme.muted)
+            .bg(theme.selection_bg)
             .add_modifier(Modifier::BOLD),
     )
     .highlight_symbol("\u{25b6} ");
