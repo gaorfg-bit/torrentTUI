@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::ui::util::{centered_rect, pad_to_width};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
@@ -35,12 +35,14 @@ pub fn help_rows() -> Vec<(String, String)> {
         }
     };
     section(&mut rows, Section::Main, None);
+    section(&mut rows, Section::Theme, Some("-- Themes --"));
     section(&mut rows, Section::Search, Some("-- Search Results --"));
     section(&mut rows, Section::Detail, Some("-- Detail View --"));
     rows
 }
 
 pub fn render_help(f: &mut Frame, area: Rect, app: &mut App) {
+    let theme = app.theme;
     let popup = centered_rect(65, 90, area);
     f.render_widget(Clear, popup);
 
@@ -52,7 +54,7 @@ pub fn render_help(f: &mut Frame, area: Rect, app: &mut App) {
                 Span::styled(
                     pad_to_width(key, KEY_COL_WIDTH),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(theme.primary)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(" "),
@@ -77,9 +79,9 @@ pub fn render_help(f: &mut Frame, area: Rect, app: &mut App) {
             Block::default()
                 .title(title)
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(Style::default().fg(theme.primary)),
         )
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(theme.text))
         .scroll((app.help_scroll, 0));
 
     f.render_widget(widget, popup);

@@ -318,6 +318,7 @@ http_api_bind = "127.0.0.1:0" # localhost-only by default (0 = auto-assigned por
 [ui]
 refresh_rate_ms = 100
 enable_notifications = true
+theme = "system"              # colour theme; see Themes below
 
 [player]
 command = ""                  # empty = OS default (xdg-open / open / start)
@@ -338,6 +339,12 @@ bind_interface = ""           # bind all BitTorrent traffic to an interface, e.g
 Paths (`download_dir`, `watch_dir`, `player.command`) may start with `~/`, which expands to your home directory.
 
 The `[privacy]` keys are all off by default and opt-in. See [Privacy](#privacy) for exactly what each one does and its caveats, or jump to the copy-paste [recipes](#recipes).
+
+### Themes
+
+TorrentTUI ships with a colour-theme picker. Press `T` — or run **Choose a colour theme** from the command palette (`:` / `Ctrl+P`) — to open the selector: the highlight previews each theme live, `Enter` applies it, `Esc` cancels.
+
+The choice is written back to `[ui] theme`. `system` (the default) is TorrentTUI's original ANSI palette; every other theme sets explicit 24-bit colours, so it needs a truecolor terminal. Around three dozen presets are bundled — `tokyonight`, `gruvbox`, `catppuccin`, `nord`, `dracula`, `kanagawa`, `matrix` and more. An unknown `theme` value falls back to `system`.
 
 ### Watch folder
 

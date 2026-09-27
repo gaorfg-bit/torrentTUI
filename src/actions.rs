@@ -38,6 +38,7 @@ pub enum ActionId {
     MarkAll,
     ClearMarks,
     ToggleHelp,
+    SelectTheme,
     Detach,
     Quit,
     // Detail view
@@ -72,6 +73,10 @@ pub enum Section {
     Main,
     Search,
     Detail,
+    /// Theme selection. Rendered only in the help overlay's "Themes" block —
+    /// deliberately not in the README key tables, which the drift test
+    /// regenerates from `Main`/`Search`/`Detail` alone.
+    Theme,
 }
 
 pub struct ActionInfo {
@@ -382,6 +387,24 @@ pub const ACTIONS: &[ActionInfo] = &[
         // Detaching an empty session would leave a background process with
         // nothing to do — the kind of surprise the explicitness rule forbids.
         available: has_torrents,
+    },
+    // ---- Themes ----
+    ActionInfo {
+        // Global, so the palette offers it from every non-input view (Normal,
+        // Detail, Search results). The keybinding lives in Normal mode, beside
+        // the other view-level actions.
+        id: Some(ActionId::SelectTheme),
+        scope: Scope::Global,
+        section: Section::Theme,
+        keys: "`T`",
+        description: "Choose a colour theme",
+        short: Some("Choose a colour theme"),
+        // Not a status-bar hint: the Normal line already clips on narrow
+        // terminals, and the palette and `?` overlay both carry it.
+        hint: None,
+        hint_when_empty: false,
+        in_palette: true,
+        available: always,
     },
     ActionInfo {
         id: Some(ActionId::Quit),

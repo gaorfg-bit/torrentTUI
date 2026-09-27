@@ -252,6 +252,12 @@ pub struct UiConfig {
     pub refresh_rate_ms: u64,
     #[serde(default = "default_true")]
     pub enable_notifications: bool,
+    /// Colour theme id, chosen from the built-in registry (`theme::THEMES`).
+    /// An id matching no theme falls back to `system` at startup, so a stale or
+    /// mistyped value never prevents the app from starting. Written back here
+    /// whenever the user picks a theme from the in-app selector.
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_download_dir() -> String {
@@ -272,6 +278,10 @@ fn default_listen_port() -> u16 {
 
 fn default_refresh_rate() -> u64 {
     100
+}
+
+fn default_theme() -> String {
+    "system".to_string()
 }
 
 fn default_http_api_bind() -> String {
@@ -337,6 +347,7 @@ impl Default for UiConfig {
         Self {
             refresh_rate_ms: default_refresh_rate(),
             enable_notifications: true,
+            theme: default_theme(),
         }
     }
 }
@@ -455,6 +466,7 @@ mod tests {
         assert_eq!(config.network.http_api_bind, "127.0.0.1:0");
         assert_eq!(config.ui.refresh_rate_ms, 100);
         assert!(config.ui.enable_notifications);
+        assert_eq!(config.ui.theme, "system");
         assert!(config.player.command.is_empty());
         assert!(config.player.args.is_empty());
         assert!(config.search.enable_apibay);
@@ -571,6 +583,8 @@ confirm_on_quit = false
         assert_eq!(config.network.listen_port, 6881);
         assert_eq!(config.ui.refresh_rate_ms, 100);
         assert!(config.ui.enable_notifications);
+        // A config written before theming existed still parses and defaults.
+        assert_eq!(config.ui.theme, "system");
         assert!(config.search.enable_apibay);
         assert!(config.search.enable_torrents_csv);
     }
@@ -594,6 +608,7 @@ http_api_bind = "127.0.0.1:8731"
 [ui]
 refresh_rate_ms = 200
 enable_notifications = false
+theme = "tokyonight"
 
 [player]
 command = "mpv"
@@ -620,6 +635,7 @@ max_results = 10
         assert_eq!(config.network.http_api_bind, "127.0.0.1:8731");
         assert_eq!(config.ui.refresh_rate_ms, 200);
         assert!(!config.ui.enable_notifications);
+        assert_eq!(config.ui.theme, "tokyonight");
         assert_eq!(config.player.command, "mpv");
         assert_eq!(config.player.args, vec!["--no-terminal".to_string()]);
         assert!(!config.search.enable_apibay);
