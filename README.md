@@ -306,6 +306,8 @@ Config file is created automatically at:
 download_dir = "~/Downloads/torrents"
 confirm_on_quit = true
 # watch_dir = "~/torrents/watch"  # optional; auto-add .torrent files dropped here
+# on_complete_command = "~/bin/organize"  # optional; run on each finished torrent
+remove_after_complete = "never"          # never | remove | delete — see "Post-download hook"
 
 [network]
 listen_port = 6881
@@ -335,7 +337,7 @@ blocklist_url = ""            # PeerGuardian .p2p list: path, ~/path, file:// or
 bind_interface = ""           # bind all BitTorrent traffic to an interface, e.g. "wg0"
 ```
 
-Paths (`download_dir`, `watch_dir`, `player.command`) may start with `~/`, which expands to your home directory.
+Paths (`download_dir`, `watch_dir`, `on_complete_command`, `player.command`) may start with `~/`, which expands to your home directory.
 
 The `[privacy]` keys are all off by default and opt-in. See [Privacy](#privacy) for exactly what each one does and its caveats, or jump to the copy-paste [recipes](#recipes).
 
@@ -356,6 +358,28 @@ blackhole directory): TorrentTUI removes only files whose info hash matches a to
 deleted, but it does remove them for good. Cleanup is skipped entirely when `watch_dir` is
 your home directory or a filesystem root, and never descends into `download_dir` when that
 lives inside the watch folder.
+
+### Post-download hook
+
+`on_complete_command` runs a program once per torrent the moment it finishes
+downloading, before seeding starts being useful. The torrent's on-disk path is
+passed as the first argument, and the display name / info hash ride in
+`TTUI_NAME` and `TTUI_INFO_HASH`. The program is invoked directly, not through a
+shell — point it at a script with a shebang. Use it to hand a finished download
+to an external organizer (a media-library importer, a transcoder, a notifier).
+
+`remove_after_complete` then decides what happens to the torrent, **and only if
+the program exited zero**:
+
+- `never` (default) — leave the torrent seeding.
+- `remove` — drop the torrent from the session, keep the downloaded files.
+- `delete` — drop the torrent and delete its files.
+
+If the program cannot be started or exits non-zero, the torrent is left
+untouched and a warning is shown — a broken organizer can never cost you a
+download. The program runs on a background thread, so a slow importer never
+stalls the engine. The watch-folder cleanup described above still applies: when a
+torrent is removed, its source `.torrent`/`.magnet` is removed too.
 
 ### Logging
 

@@ -31,6 +31,37 @@ pub struct GeneralConfig {
     /// which case adding still works but that cleanup is switched off.
     #[serde(default)]
     pub watch_dir: Option<String>,
+    /// Program run once when a torrent finishes downloading, before any
+    /// post-download cleanup. Invoked directly (no shell) with the torrent's
+    /// on-disk path as its first argument and `TTUI_NAME` / `TTUI_INFO_HASH` in
+    /// the environment. A `~/` prefix is expanded at load time, and a
+    /// whitespace-only value counts as unset. This is the hook that hands a
+    /// finished download to an external organizer (e.g. a media library
+    /// importer); `remove_after_complete` decides what happens to the torrent
+    /// once the program exits successfully.
+    #[serde(default)]
+    pub on_complete_command: Option<String>,
+    /// What to do with a torrent once `on_complete_command` has run and exited
+    /// zero. `never` (default) leaves it seeding; `remove` drops the torrent
+    /// but keeps its files; `delete` drops the torrent and removes its files.
+    /// With no `on_complete_command` configured this is inert.
+    #[serde(default)]
+    pub remove_after_complete: RemoveAfterComplete,
+}
+
+/// Post-download disposition for a torrent whose `on_complete_command` exited
+/// successfully. Serialized lowercase in `config.toml`
+/// (`remove_after_complete = "delete"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RemoveAfterComplete {
+    /// Leave the torrent (and its files) alone — keep seeding.
+    #[default]
+    Never,
+    /// Remove the torrent from the session, keeping the downloaded files.
+    Remove,
+    /// Remove the torrent from the session and delete its downloaded files.
+    Delete,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,7 +346,17 @@ impl Default for GeneralConfig {
             download_dir: default_download_dir(),
             confirm_on_quit: true,
             watch_dir: None,
+            on_complete_command: None,
+            remove_after_complete: RemoveAfterComplete::Never,
         }
+    }
+}
+
+impl GeneralConfig {
+    /// The post-download hook program, when one is configured; whitespace-only
+    /// counts as unset, mirroring `[privacy]`'s `non_empty` treatment.
+    pub fn on_complete_hook(&self) -> Option<&str> {
+        self.on_complete_command.as_deref().and_then(non_empty)
     }
 }
 
@@ -409,6 +450,8 @@ impl Config {
     pub fn expand_paths(&mut self) {
         self.general.download_dir = expand_tilde(&self.general.download_dir);
         self.general.watch_dir = self.general.watch_dir.take().map(|d| expand_tilde(&d));
+        self.general.on_complete_command =
+            self.general.on_complete_command.take().map(|c| expand_tilde(&c));
         self.player.command = expand_tilde(&self.player.command);
     }
 
@@ -445,6 +488,11 @@ mod tests {
         let config = Config::default();
         assert!(config.general.confirm_on_quit);
         assert!(config.general.watch_dir.is_none());
+        assert!(config.general.on_complete_hook().is_none());
+        assert_eq!(
+            config.general.remove_after_complete,
+            RemoveAfterComplete::Never
+        );
         assert_eq!(config.network.listen_port, 6881);
         assert!(config.network.enable_dht);
         assert!(!config.network.enable_upnp);
@@ -466,6 +514,56 @@ mod tests {
         assert!(config.privacy.proxy_url().is_none());
         assert!(config.privacy.bind_interface().is_none());
         assert!(config.privacy.blocklist_url().is_none());
+    }
+
+    #[test]
+    fn on_complete_hook_absent_means_off() {
+        // An existing config file with no new keys must keep the hook inert
+        // and the disposition at `never` — no behaviour change on upgrade.
+        let config: Config = toml::from_str("[general]\ndownload_dir = \"/tmp\"\n").unwrap();
+        assert!(config.general.on_complete_hook().is_none());
+        assert_eq!(
+            config.general.remove_after_complete,
+            RemoveAfterComplete::Never
+        );
+    }
+
+    #[test]
+    fn on_complete_hook_whitespace_counts_as_off() {
+        let config: Config =
+            toml::from_str("[general]\non_complete_command = \"   \"\n").unwrap();
+        assert!(config.general.on_complete_hook().is_none());
+    }
+
+    #[test]
+    fn remove_after_complete_parses_lowercase_variants() {
+        for (raw, want) in [
+            ("never", RemoveAfterComplete::Never),
+            ("remove", RemoveAfterComplete::Remove),
+            ("delete", RemoveAfterComplete::Delete),
+        ] {
+            let toml_str = format!("[general]\nremove_after_complete = \"{raw}\"\n");
+            let config: Config = toml::from_str(&toml_str).unwrap();
+            assert_eq!(config.general.remove_after_complete, want, "raw = {raw}");
+        }
+    }
+
+    #[test]
+    fn remove_after_complete_rejects_unknown_variant() {
+        assert!(toml::from_str::<Config>("[general]\nremove_after_complete = \"nope\"\n").is_err());
+    }
+
+    #[test]
+    fn expand_paths_expands_the_on_complete_hook() {
+        let mut config: Config =
+            toml::from_str("[general]\non_complete_command = \"~/bin/hook\"\n").unwrap();
+        config.expand_paths();
+        let home = dirs::home_dir().unwrap();
+        let expected = home.join("bin/hook").to_string_lossy().into_owned();
+        assert_eq!(
+            config.general.on_complete_command.as_deref(),
+            Some(expected.as_str())
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@
 //! limiter) had to. `Paused` in the table therefore always means the user —
 //! or a persisted previous session — paused it.
 
-use crate::config::Config;
+use crate::config::{Config, RemoveAfterComplete};
 use crate::engine::health_capture::HealthCapture;
 use crate::engine::watch;
 use crate::types::{
@@ -1564,6 +1564,120 @@ fn spawn_watch_cleanup(
     });
 }
 
+/// Await the next engine command from either the UI's channel or the internal
+/// one the on-complete hook uses to queue a post-download `Delete`. Merging
+/// them here lets both flow through the same command match below, so the
+/// delete path (hash resolution, watch-folder cleanup, `finished_set`) is not
+/// duplicated.
+async fn recv_command(
+    cmd_rx: &mut mpsc::Receiver<EngineCommand>,
+    auto_cmd_rx: &mut mpsc::Receiver<EngineCommand>,
+) -> Option<EngineCommand> {
+    tokio::select! {
+        cmd = cmd_rx.recv() => cmd,
+        cmd = auto_cmd_rx.recv() => cmd,
+    }
+}
+
+/// Run the configured post-download program. Called on a blocking thread; the
+/// torrent's on-disk path is `argv[1]` and the display name / info hash ride in
+/// the environment. `Err` carries a message ready for the status bar.
+fn run_on_complete_command(
+    program: &str,
+    content_path: &str,
+    name: &str,
+    info_hash: &str,
+) -> std::result::Result<(), String> {
+    let status = std::process::Command::new(program)
+        .arg(content_path)
+        .env("TTUI_NAME", name)
+        .env("TTUI_INFO_HASH", info_hash)
+        .status()
+        .map_err(|e| format!("could not launch \"{program}\": {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("\"{program}\" exited with {status}"))
+    }
+}
+
+/// Per-session configuration for the post-download hook, assembled once in
+/// `run_engine` so the completion path hands `push_state` a single value
+/// instead of three related ones.
+struct OnComplete {
+    /// Program to run, or `None` when the hook is off.
+    program: Option<String>,
+    /// What to do with the torrent once the program exits zero.
+    remove: RemoveAfterComplete,
+    /// Internal command channel. The hook queues its post-download `Delete`
+    /// here so it flows through the same command match as the UI's.
+    cmd_tx: mpsc::Sender<EngineCommand>,
+    /// Torrent ids already present when the session started — the backlog a
+    /// restarted session reloads. The hook is skipped for these, so restarting
+    /// never re-organizes everything that was already finished; only downloads
+    /// that complete *while we are running* are handed off.
+    skip_ids: HashSet<usize>,
+}
+
+/// Identity of a torrent that just finished, snapshotted from `TorrentInfo` so
+/// the spawned hook task owns plain values rather than borrowing the push.
+struct CompletedTorrent {
+    id: usize,
+    name: String,
+    info_hash: String,
+    content_path: String,
+}
+
+/// Handle a torrent that just finished when an on-complete command is set: run
+/// the program off the engine loop, then — only if it exited zero — queue the
+/// disposition (`never`/`remove`/`delete`) as a `Delete` command on the internal
+/// channel. A failed or interrupted program leaves the torrent untouched, so a
+/// broken organizer can never cost the user the download.
+fn spawn_on_complete_hook(
+    program: String,
+    remove: RemoveAfterComplete,
+    cmd_tx: mpsc::Sender<EngineCommand>,
+    torrent: CompletedTorrent,
+    msg_tx: mpsc::Sender<String>,
+) {
+    let CompletedTorrent {
+        id,
+        name,
+        info_hash,
+        content_path,
+    } = torrent;
+    tokio::spawn(async move {
+        let program_arg = program.clone();
+        let name_arg = name.clone();
+        let path_arg = content_path.clone();
+        let hash_arg = info_hash.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            run_on_complete_command(&program_arg, &path_arg, &name_arg, &hash_arg)
+        })
+        .await;
+
+        match outcome {
+            Ok(Ok(())) => {
+                let _ = msg_tx.try_send(format!("\u{2713} \"{name}\" organized"));
+                if !matches!(remove, RemoveAfterComplete::Never) {
+                    let delete_files = matches!(remove, RemoveAfterComplete::Delete);
+                    let _ = cmd_tx.send(EngineCommand::Delete { id, delete_files }).await;
+                }
+            }
+            Ok(Err(e)) => {
+                let _ = msg_tx.try_send(format!(
+                    "\u{26a0} organizer failed for \"{name}\": {e} — torrent kept"
+                ));
+            }
+            Err(join_error) => {
+                let _ = msg_tx.try_send(format!(
+                    "\u{26a0} organizer task failed for \"{name}\": {join_error} — torrent kept"
+                ));
+            }
+        }
+    });
+}
+
 /// The engine task. Owns the librqbit session and the watch folder, and runs
 /// until it receives `Shutdown` or the command channel closes — both are
 /// normal exits that return `Ok`.
@@ -1756,6 +1870,26 @@ pub async fn run_engine(
     state_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     let enable_notifications = config.ui.enable_notifications;
+    // The on-complete hook queues its post-download `Delete` on this internal
+    // channel; `recv_command` races it against the UI's channel so both share
+    // one command match. `OnComplete` owns the sender, which keeps the channel
+    // open for the whole run.
+    let (auto_cmd_tx, mut auto_cmd_rx) = mpsc::channel::<EngineCommand>(32);
+    // Snapshot what the reloaded session already holds. Anything in here was
+    // finished (or already running) before this session began, so the
+    // on-complete hook must ignore it — otherwise every restart would stampede
+    // the organizer with the whole backlog.
+    let skip_ids: HashSet<usize> = engine
+        .get_all_torrents(None)
+        .into_iter()
+        .map(|t| t.id)
+        .collect();
+    let on_complete = OnComplete {
+        program: config.general.on_complete_hook().map(str::to_string),
+        remove: config.general.remove_after_complete,
+        cmd_tx: auto_cmd_tx,
+        skip_ids,
+    };
     let mut cmd_rx = cmd_rx;
 
     let mut finished_set: HashSet<usize> = HashSet::new();
@@ -1783,6 +1917,7 @@ pub async fn run_engine(
         msg_tx: &mpsc::Sender<String>,
         finished_set: &mut HashSet<usize>,
         enable_notifications: bool,
+        on_complete: &OnComplete,
         detail_id: Option<usize>,
     ) {
         let torrents = engine.get_all_torrents(detail_id);
@@ -1825,6 +1960,39 @@ pub async fn run_engine(
                         });
                     }
                 }
+
+                if let Some(program) = on_complete.program.clone().filter(|_| {
+                    // Only torrents that finish while we are running — see
+                    // `OnComplete::skip_ids` (the reloaded backlog is skipped).
+                    !on_complete.skip_ids.contains(&t.id)
+                }) {
+                    // The snapshot fills `info_hash` only for the Detail-view
+                    // torrent (an O(N) allocation saving), so look it up here.
+                    let info_hash = engine
+                        .info_hash(t.id)
+                        .map(|h| h.as_string())
+                        .unwrap_or_default();
+                    match t.content_path.as_deref() {
+                        Some(content) => spawn_on_complete_hook(
+                            program,
+                            on_complete.remove,
+                            on_complete.cmd_tx.clone(),
+                            CompletedTorrent {
+                                id: t.id,
+                                name: t.name.clone(),
+                                info_hash,
+                                content_path: content.to_string(),
+                            },
+                            msg_tx.clone(),
+                        ),
+                        None => {
+                            let _ = msg_tx.try_send(format!(
+                                "\u{26a0} on_complete: \"{}\" has no resolved path — hook skipped",
+                                t.name
+                            ));
+                        }
+                    }
+                }
             }
         }
 
@@ -1837,7 +2005,7 @@ pub async fn run_engine(
 
     loop {
         tokio::select! {
-            cmd = cmd_rx.recv() => {
+            cmd = recv_command(&mut cmd_rx, &mut auto_cmd_rx) => {
                 match cmd {
                     Some(EngineCommand::AddTorrent(source)) => {
                         // Proxy mode: drop udp:// trackers before the magnet
@@ -2138,13 +2306,13 @@ pub async fn run_engine(
                         break;
                     }
                 }
-                push_state(&engine, &state_tx, &msg_tx, &mut finished_set, enable_notifications, detail_torrent_id).await;
+                push_state(&engine, &state_tx, &msg_tx, &mut finished_set, enable_notifications, &on_complete, detail_torrent_id).await;
             }
             Some(id) = finished_rx.recv() => {
                 finished_set.insert(id);
             }
             _ = state_tick.tick() => {
-                push_state(&engine, &state_tx, &msg_tx, &mut finished_set, enable_notifications, detail_torrent_id).await;
+                push_state(&engine, &state_tx, &msg_tx, &mut finished_set, enable_notifications, &on_complete, detail_torrent_id).await;
                 ticks_since_network_push += 1;
                 if ticks_since_network_push >= NETWORK_PUSH_EVERY_TICKS {
                     ticks_since_network_push = 0;
@@ -2195,6 +2363,53 @@ pub async fn run_engine(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn on_complete_command_receives_path_as_arg1_and_name_hash_in_env() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        let script = dir.path().join("hook.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$TTUI_NAME\" \"$TTUI_INFO_HASH\" > \"{}\"\n",
+                out.display()
+            ),
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+
+        let result =
+            run_on_complete_command(script.to_str().unwrap(), "/media/film.mkv", "Film", "abc123");
+        assert!(result.is_ok(), "hook should exit zero: {result:?}");
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            "/media/film.mkv|Film|abc123"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn on_complete_command_reports_nonzero_exit_and_missing_program() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fail.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 3\n").unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+
+        // A non-zero exit must surface as Err so the torrent is left alone.
+        let failed = run_on_complete_command(script.to_str().unwrap(), "/x", "n", "h");
+        assert!(failed.is_err(), "non-zero exit should be Err");
+        // A program that cannot even be spawned is Err too, not a panic.
+        let missing = run_on_complete_command("/no/such/program-xyz", "/x", "n", "h");
+        assert!(missing.is_err(), "missing program should be Err");
+    }
 
     #[test]
     fn strip_udp_trackers_drops_udp_and_keeps_the_rest_verbatim() {
